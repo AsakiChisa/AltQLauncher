@@ -17,6 +17,56 @@ $ToolsPath = (Resolve-Path -LiteralPath $ToolsPath).Path
 $BuildPath = (Resolve-Path -LiteralPath $BuildPath).Path
 $DistPath = (Resolve-Path -LiteralPath $DistPath).Path
 . (Join-Path $PSScriptRoot 'Process.ps1')
+
+function Get-VerifiedToolArchive {
+    param([string]$Name, $Tool, [string]$CachePath, [string]$DiagnosticsPath)
+    $archive = Join-Path $CachePath $Tool.file
+    $downloadLog = Join-Path $DiagnosticsPath 'downloads.stdout.log'
+    if ((Test-Path -LiteralPath $archive) -and
+        (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -eq $Tool.sha256) {
+        return $archive
+    }
+    # 地区镜像或跳转页可能返回 HTTP 200；每次只接受锁定 SHA256 的内容。
+    $urls = @($Tool.url)
+    if ($Tool.PSObject.Properties.Name -contains 'fallback_urls') { $urls += @($Tool.fallback_urls) }
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    $sequence = 0
+    foreach ($url in $urls) {
+        for ($attempt = 1; $attempt -le 2; $attempt++) {
+            $sequence++
+            $temporary = $archive + '.download-' + [guid]::NewGuid().ToString('N')
+            $description = "$Name attempt=$sequence url=$url"
+            Write-Host "下载并校验官方工具：$description"
+            Add-Content -LiteralPath $downloadLog -Value $description -Encoding utf8
+            try {
+                if ($curl) {
+                    Invoke-ReleaseProcess -FilePath $curl.Source -Arguments @('--location', '--fail', '--silent',
+                        '--show-error', '--connect-timeout', '10', '--max-time', '30', '--output', $temporary, $url) `
+                        -LogPrefix (Join-Path $DiagnosticsPath "download-$Name-$sequence") | Out-Null
+                } else {
+                    Invoke-WebRequest -Uri $url -OutFile $temporary -TimeoutSec 30 -MaximumRedirection 10
+                }
+                $actual = (Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash
+                if ($actual -ne $Tool.sha256) {
+                    $bytes = (Get-Item -LiteralPath $temporary).Length
+                    throw "SHA256 mismatch expected=$($Tool.sha256) actual=$actual bytes=$bytes"
+                }
+                # 验证成功后才替换缓存，不会解压错误文件或降低校验要求。
+                Move-Item -LiteralPath $temporary -Destination $archive -Force
+                Add-Content -LiteralPath $downloadLog -Value "$Name verified SHA256=$actual" -Encoding utf8
+                return $archive
+            } catch {
+                $failureMessage = $_.Exception.Message
+                Add-Content -LiteralPath $downloadLog -Value "$description failed: $failureMessage" -Encoding utf8
+                Write-Warning "本次下载未通过校验，将重试或切换官方镜像：$failureMessage"
+            } finally {
+                if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+            }
+        }
+    }
+    throw "无法获取通过校验的 $Name；已尝试所有官方地址，详情见 $downloadLog。"
+}
+
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'VERSION 必须为 x.y.z' }
 $source = Join-Path $repoRoot 'src\AltQLauncher.ahk'
@@ -26,14 +76,7 @@ if (![System.IO.File]::ReadAllText($source).Contains(";@Ahk2Exe-SetVersion $vers
 $lock = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tools.lock.json') -Raw | ConvertFrom-Json
 foreach ($property in $lock.PSObject.Properties) {
     $tool = $property.Value
-    $archive = Join-Path $ToolsPath $tool.file
-    if (!(Test-Path -LiteralPath $archive)) {
-        Write-Host "下载官方工具：$($property.Name)"
-        Invoke-WebRequest -Uri $tool.url -OutFile $archive
-    }
-    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $tool.sha256) {
-        throw "工具校验失败：$archive；请删除该缓存后重试。"
-    }
+    $archive = Get-VerifiedToolArchive -Name $property.Name -Tool $tool -CachePath $ToolsPath -DiagnosticsPath $BuildPath
     Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $ToolsPath $tool.folder) -Force
 }
 $runtime = Join-Path $ToolsPath 'AutoHotkey\AutoHotkey64.exe'

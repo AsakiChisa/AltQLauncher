@@ -14,6 +14,10 @@
   "NSIS": {
     "file": "nsis-3.13.zip",
     "url": "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip",
+    "fallback_urls": [
+      "https://master.dl.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip?viasf=1",
+      "https://altushost-swe.dl.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip"
+    ],
     "sha256": "BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8",
     "folder": "NSIS"
   }
