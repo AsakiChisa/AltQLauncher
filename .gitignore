@@ -1,0 +1,9 @@
+.tools/
+build/
+dist/
+*.log
+*.bak
+*.tmp.*
+AltQLauncher.ini
+portable.flag
+!src/AltQLauncher.default.ini

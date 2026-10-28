@@ -1,0 +1,36 @@
+name: Build Windows release
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release tag
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw '版本标签必须与 VERSION 一致' }
+      - name: Build and verify
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltQLauncher-Windows-x64
+          path: dist/*
+          if-no-files-found: error
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: build/**/*.log
+          if-no-files-found: ignore

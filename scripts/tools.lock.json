@@ -1,0 +1,20 @@
+{
+  "AutoHotkey": {
+    "file": "AutoHotkey_2.0.31.zip",
+    "url": "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.31/AutoHotkey_2.0.31.zip",
+    "sha256": "CA1A595ACA4528755D8D4CD7FED23D497A37BD9A0B6892072612D68DEE1BD00A",
+    "folder": "AutoHotkey"
+  },
+  "Ahk2Exe": {
+    "file": "Ahk2Exe.zip",
+    "url": "https://github.com/AutoHotkey/Ahk2Exe/releases/download/Ahk2Exe1.1.37.02a2/Ahk2Exe1.1.37.02a2.zip",
+    "sha256": "C29B8C3A5124850D79FC9E66E2CA79677C377D7F31631AD3022BA159C5D9E3BE",
+    "folder": "Ahk2Exe"
+  },
+  "NSIS": {
+    "file": "nsis-3.13.zip",
+    "url": "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip",
+    "sha256": "BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8",
+    "folder": "NSIS"
+  }
+}
