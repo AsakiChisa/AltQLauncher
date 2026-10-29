@@ -10,6 +10,17 @@ class CoreTestPanel extends LauncherPanel {
     }
 }
 
+class HoverTestPanel extends CoreTestPanel {
+    Requests := 0
+    ActivateSelected(*) {
+        this.Requests += 1
+        this.RequestedIndex := this.Selected
+    }
+    ShowItemTooltip(item) {
+        this.TipName := item.Name
+    }
+}
+
 Check(condition, message) {
     if !condition
         throw Error("FAIL: " message)
@@ -47,6 +58,50 @@ RunCoreTests() {
         app.ShowAll := true
         app.ShowOther := true
         app.BuildGui()
+        hover := HoverTestPanel(configPath)
+        hover.Scan([root "\menu"])
+        hover.CategoryIndex := hover.Categories.Length
+        hover.BuildGui()
+        target := hover.Tiles[2].Label.Hwnd
+        hover.HandlePointer(10, 10, hover.Window.Hwnd, target)
+        Check(hover.Selected = 1 && hover.HoverIndex = 0, "隐藏时鼠标不能改变选择")
+        hover.Visible := true
+        hover.HandlePointer(10, 10, hover.Window.Hwnd, target)
+        Check(hover.Selected = 2 && hover.HoverIndex = 2 && InStr(hover.Status.Text, hover.CurrentItems()[2].Name),
+            "悬停卡片高亮并同步名称，不启动程序")
+        Check(hover.TileColors(2).Border != hover.TileColors(1).Border && hover.Requests = 0, "悬停边框明显且不产生启动请求")
+        hover.HoverSince := A_TickCount - 400
+        hover.HandlePointer(10, 10, hover.Window.Hwnd, target)
+        Check(hover.TooltipVisible && hover.TipName = hover.CurrentItems()[2].Name, "停留后显示对应软件完整名称")
+        hover.Move(-1)
+        hover.HandlePointer(10, 10, hover.Window.Hwnd, target)
+        Check(hover.Selected = 1 && !hover.TooltipVisible, "静止鼠标不会覆盖键盘选择，旧提示清除")
+        hover.HandlePointer(11, 10, hover.Window.Hwnd, target)
+        Check(hover.Selected = 2 && hover.HoverIndex = 2, "鼠标重新移动恢复悬停选择")
+        hover.HandlePointer(20, 20, 0, 0)
+        Check(hover.HoverIndex = 0 && !hover.TooltipVisible && hover.Selected = 2, "移出面板清除悬停，保留键盘选中项")
+        hover.ClickTile(1)
+        Check(hover.Requests = 1 && hover.RequestedIndex = 1, "显式点击启动点击的软件，不误用之前悬停项")
+        hover.Hide(false)
+        Check(!hover.Visible && !hover.TooltipVisible && hover.HoverIndex = 0, "隐藏面板清除全部悬停反馈")
+        hover.Cleanup()
+
+        paged := HoverTestPanel(configPath)
+        Loop 40
+            paged.Items.Push({Name: "软件" A_Index, Path: "", WorkDir: "", Category: "全部", Icon: 0})
+        paged.Groups := Map("全部", paged.Items)
+        paged.Categories := ["全部"]
+        paged.BuildGui()
+        paged.Visible := true
+        paged.Move(paged.PageSize)
+        paged.HandlePointer(30, 30, paged.Window.Hwnd, paged.Tiles[2].Bg.Hwnd)
+        Check(paged.Selected = 20 && paged.HoverIndex = 20, "翻页后按当前页映射悬停软件")
+        paged.Move(20)
+        paged.HandlePointer(31, 30, paged.Window.Hwnd, paged.Tiles[18].Frame.Hwnd)
+        Check(paged.Selected = 40 && paged.HoverIndex = 0, "末页空白格不能悬停选择或启动")
+        paged.Hide(false)
+        paged.Cleanup()
+
         editor := LauncherSettings(app)
         Check(editor.Controls["ShowAll"].Type = "CheckBox" && editor.OrderList.GetCount() > 0, "真实设置控件及事件绑定可创建（未显示）")
         editor.Controls["ShowAll"].Value := 0

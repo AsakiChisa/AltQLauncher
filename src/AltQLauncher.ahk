@@ -3,7 +3,7 @@
 #Warn All, StdOut
 ;@Ahk2Exe-SetName AltQLauncher
 ;@Ahk2Exe-SetDescription AltQLauncher 应用启动器
-;@Ahk2Exe-SetVersion 1.0.0
+;@Ahk2Exe-SetVersion 1.0.1
 ;@Ahk2Exe-SetOrigFilename AltQLauncher.exe
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 AltQLauncher contributors
 
@@ -56,7 +56,7 @@ RunLauncherApp() {
         }
     }
     if HasLauncherArgument("--version") {
-        FileAppend("AltQLauncher 1.0.0`n", "*", "UTF-8")
+        FileAppend("AltQLauncher 1.0.1`n", "*", "UTF-8")
         ExitApp(0)
     }
     directory := LauncherDataDirectory(dataOverride)
@@ -73,7 +73,7 @@ RunLauncherApp() {
         settings.Document()
         settings.Destroy()
         Launcher.Cleanup()
-        FileAppend("PASS: AltQLauncher 1.0.0 config/ui preflight`n", "*", "UTF-8")
+        FileAppend("PASS: AltQLauncher 1.0.1 config/ui preflight`n", "*", "UTF-8")
         ExitApp(0)
     }
     InstallKeybdHook()
@@ -95,6 +95,10 @@ class LauncherPanel {
         this.PreviousWindow := 0
         this.CategoryIndex := 1
         this.Selected := 1
+        this.HoverIndex := 0
+        this.HoverSince := 0
+        this.TooltipVisible := false
+        this.PointerSignature := ""
         this.Items := []
         this.Categories := ["全部"]
         this.Groups := Map("全部", [])
@@ -456,16 +460,20 @@ class LauncherPanel {
         prev.OnEvent("Click", (*) => this.Cycle(-1))
         next.OnEvent("Click", (*) => this.Cycle(1))
         this.Tiles := []
+        this.TileByHwnd := Map()
         Loop this.PageSize {
             slot := A_Index
             x := 20 + Mod(slot - 1, this.Columns) * this.CellW
             y := 86 + Floor((slot - 1) / this.Columns) * this.CellH
-            bg := g.AddText("x" x " y" y " w108 h94 Background232C3D +0x100", "")
+            frame := g.AddText("x" x " y" y " w108 h94 Background232C3D +0x100", "")
+            bg := g.AddText("x" (x + 2) " y" (y + 2) " w104 h90 Background232C3D +0x100", "")
             pic := g.AddPicture("x" (x + 38) " y" (y + 10) " w32 h32 Background232C3D", "")
             label := g.AddText("x" (x + 4) " y" (y + 50) " w100 h40 Center +0x100 +0x80 Background232C3D", "")
-            for ctrl in [bg, pic, label]
+            for ctrl in [frame, bg, pic, label] {
                 ctrl.OnEvent("Click", ObjBindMethod(this, "ClickTile", slot))
-            this.Tiles.Push({Bg: bg, Pic: pic, Label: label})
+                this.TileByHwnd[ctrl.Hwnd] := slot
+            }
+            this.Tiles.Push({Frame: frame, Bg: bg, Pic: pic, Label: label})
         }
         bottom := 92 + this.Rows * this.CellH
         this.Status := g.AddText("x22 y" bottom " w" (this.Width - 44) " h22 c96B9FF +0x80", "")
@@ -552,6 +560,9 @@ class LauncherPanel {
         x := Max(left, Round((left + right - this.Width * scale) / 2))
         y := Max(top, Round((top + bottom - this.Height * scale) / 2))
         this.Window.Show("x" x " y" y " w" this.Width " h" this.Height)
+        ; 记录初始位置，静止鼠标不会覆盖键盘选中项。
+        MouseGetPos(&mx, &my, &pointerWindow, &pointerControl, 2)
+        this.PointerSignature := mx "|" my "|" pointerWindow "|" pointerControl
         SetTimer(this.WatchCallback, 15)
         Critical("Off")
         ; GUI 显示期间也可能释放 Alt；最后再检查，杜绝“松开后才弹出”。
@@ -574,7 +585,58 @@ class LauncherPanel {
         } else if this.Visible && !WinActive("ahk_id " this.Window.Hwnd) {
             ; 焦点丢失时取消，不抢夺其它应用焦点。
             this.Hide(false)
+        } else if this.Visible {
+            CoordMode("Mouse", "Screen")
+            MouseGetPos(&mx, &my, &pointerWindow, &pointerControl, 2)
+            this.HandlePointer(mx, my, pointerWindow, pointerControl)
         }
+    }
+
+    HandlePointer(x, y, pointerWindow, pointerControl) {
+        if !this.Visible || !this.Held()
+            return
+        signature := x "|" y "|" pointerWindow "|" pointerControl
+        moved := signature != this.PointerSignature
+        this.PointerSignature := signature
+        if pointerWindow != this.Window.Hwnd || !this.TileByHwnd.Has(pointerControl) {
+            if this.HoverIndex {
+                this.ClearHover()
+                this.PaintTiles()
+            }
+            return
+        }
+        if moved {
+            index := Floor((this.Selected - 1) / this.PageSize) * this.PageSize + this.TileByHwnd[pointerControl]
+            if index > this.CurrentItems().Length {
+                this.ClearHover()
+                this.PaintTiles()
+                return
+            }
+            if index != this.HoverIndex || index != this.Selected {
+                this.ClearHover()
+                this.HoverIndex := index
+                this.HoverSince := A_TickCount
+                this.Selected := index
+                this.PaintTiles()
+                this.RenderStatus()
+            }
+        }
+        if this.HoverIndex && !this.TooltipVisible && A_TickCount - this.HoverSince >= 350 {
+            item := this.CurrentItems()[this.HoverIndex]
+            this.ShowItemTooltip(item)
+            this.TooltipVisible := true
+        }
+    }
+
+    ShowItemTooltip(item) {
+        ToolTip(item.Name "`n" item.Path)
+    }
+
+    ClearHover() {
+        this.HoverIndex := 0
+        this.HoverSince := 0
+        this.TooltipVisible := false
+        ToolTip()
     }
 
     Hide(restore := true) {
@@ -582,6 +644,7 @@ class LauncherPanel {
             return
         active := WinActive("ahk_id " this.Window.Hwnd)
         this.Visible := false  ; 先关启动门，再隐藏控件，排队的点击不能误执行。
+        this.ClearHover()
         SetTimer(this.WatchCallback, 0)
         this.Window.Hide()
         if restore && active && this.PreviousWindow && WinExist("ahk_id " this.PreviousWindow) {
@@ -615,6 +678,7 @@ class LauncherPanel {
     }
 
     Render() {
+        this.ClearHover()
         items := this.CurrentItems()
         count := items.Length
         page := Floor((this.Selected - 1) / this.PageSize)
@@ -623,22 +687,49 @@ class LauncherPanel {
         for slot, tile in this.Tiles {
             index := page * this.PageSize + slot
             exists := index <= count
+            tile.Frame.Visible := exists
             tile.Bg.Visible := exists
             tile.Pic.Visible := exists && items[index].Icon != 0
             tile.Label.Visible := exists
             if !exists
                 continue
             item := items[index]
-            color := index = this.Selected ? "3B5279" : "232C3D"
-            tile.Bg.Opt("Background" color)
-            tile.Pic.Opt("Background" color)
-            tile.Label.Opt("Background" color)
             tile.Label.Text := item.Name
             if item.Icon
                 tile.Pic.Value := "HICON:*" item.Icon  ; 控件复制，缓存负责销毁原图标。
-            tile.Bg.Redraw()
-            tile.Label.Redraw()
         }
+        this.PaintTiles()
+        this.RenderStatus()
+    }
+
+    TileColors(index) {
+        if index = this.HoverIndex
+            return {Fill: "48658F", Border: "A4C8FF"}
+        if index = this.Selected
+            return {Fill: "3B5279", Border: "638FCF"}
+        return {Fill: "232C3D", Border: "232C3D"}
+    }
+
+    PaintTiles() {
+        page := Floor((this.Selected - 1) / this.PageSize)
+        count := this.CurrentItems().Length
+        for slot, tile in this.Tiles {
+            index := page * this.PageSize + slot
+            if index > count
+                continue
+            colors := this.TileColors(index)
+            tile.Frame.Opt("Background" colors.Border)
+            for ctrl in [tile.Bg, tile.Pic, tile.Label]
+                ctrl.Opt("Background" colors.Fill)
+            for ctrl in [tile.Frame, tile.Bg, tile.Pic, tile.Label]
+                ctrl.Redraw()
+        }
+    }
+
+    RenderStatus() {
+        items := this.CurrentItems()
+        count := items.Length
+        page := Floor((this.Selected - 1) / this.PageSize)
         this.Status.Text := count ? "第 " (page + 1) "/" Ceil(count / this.PageSize) " 页    ·    " items[this.Selected].Name
             : "没有条目；请检查开始菜单或配置 PortableRoots / Apps，然后在托盘菜单重新扫描。"
         if !this.Categories.Length
@@ -665,7 +756,10 @@ class LauncherPanel {
         item := items[this.Selected]
         this.SessionUsed := true
         this.Hide()
-        try this.Launch(item)
+        try {
+            this.Launch(item)
+            this.NotifyLaunch(item)
+        }
         catch as err {
             this.Log("启动失败：" item.Name "；" err.Message)
             TrayTip("无法启动「" item.Name "」：" err.Message, "AltQLauncher", "Iconx")
@@ -679,6 +773,10 @@ class LauncherPanel {
             SetTimer(ObjBindMethod(this, "ResetSession"), -30)
         else
             this.SessionUsed := false
+    }
+
+    NotifyLaunch(item) {
+        TrayTip("已请求打开「" item.Name "」。", "AltQLauncher")
     }
 
     Launch(item) {
@@ -737,6 +835,7 @@ class LauncherPanel {
 
     Cleanup(*) {
         SetTimer(this.WatchCallback, 0)
+        this.ClearHover()
         if this.HasOwnProp("Settings")
             this.Settings.Destroy()
         if this.HasOwnProp("Window")
