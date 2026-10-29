@@ -3,7 +3,7 @@
 #Warn All, StdOut
 ;@Ahk2Exe-SetName AltQLauncher
 ;@Ahk2Exe-SetDescription AltQLauncher 应用启动器
-;@Ahk2Exe-SetVersion 1.0.1
+;@Ahk2Exe-SetVersion 1.0.2
 ;@Ahk2Exe-SetOrigFilename AltQLauncher.exe
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 AltQLauncher contributors
 
@@ -56,7 +56,7 @@ RunLauncherApp() {
         }
     }
     if HasLauncherArgument("--version") {
-        FileAppend("AltQLauncher 1.0.1`n", "*", "UTF-8")
+        FileAppend("AltQLauncher 1.0.2`n", "*", "UTF-8")
         ExitApp(0)
     }
     directory := LauncherDataDirectory(dataOverride)
@@ -73,7 +73,7 @@ RunLauncherApp() {
         settings.Document()
         settings.Destroy()
         Launcher.Cleanup()
-        FileAppend("PASS: AltQLauncher 1.0.1 config/ui preflight`n", "*", "UTF-8")
+        FileAppend("PASS: AltQLauncher 1.0.2 config/ui preflight`n", "*", "UTF-8")
         ExitApp(0)
     }
     InstallKeybdHook()
@@ -446,7 +446,8 @@ class LauncherPanel {
         this.CellH := 102
         this.Width := 40 + this.Columns * this.CellW
         this.Height := 174 + this.Rows * this.CellH
-        g := Gui("+AlwaysOnTop -Caption +ToolWindow", "AltQLauncher")
+        ; WS_EX_COMPOSITED：把重叠子控件在缓冲区绘制完成后一起显示。
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x02000000", "AltQLauncher")
         this.Window := g
         g.BackColor := "171D2B"
         g.MarginX := 0
@@ -465,15 +466,17 @@ class LauncherPanel {
             slot := A_Index
             x := 20 + Mod(slot - 1, this.Columns) * this.CellW
             y := 86 + Floor((slot - 1) / this.Columns) * this.CellH
-            frame := g.AddText("x" x " y" y " w108 h94 Background232C3D +0x100", "")
-            bg := g.AddText("x" (x + 2) " y" (y + 2) " w104 h90 Background232C3D +0x100", "")
+            ; WS_CLIPSIBLINGS：边框和底色不能擦到位于上方的图标、文字区域。
+            frame := g.AddText("x" x " y" y " w108 h94 Background232C3D +0x100 +0x04000000", "")
+            bg := g.AddText("x" (x + 2) " y" (y + 2) " w104 h90 Background232C3D +0x100 +0x04000000", "")
             pic := g.AddPicture("x" (x + 38) " y" (y + 10) " w32 h32 Background232C3D", "")
             label := g.AddText("x" (x + 4) " y" (y + 50) " w100 h40 Center +0x100 +0x80 Background232C3D", "")
             for ctrl in [frame, bg, pic, label] {
                 ctrl.OnEvent("Click", ObjBindMethod(this, "ClickTile", slot))
                 this.TileByHwnd[ctrl.Hwnd] := slot
             }
-            this.Tiles.Push({Frame: frame, Bg: bg, Pic: pic, Label: label})
+            this.Tiles.Push({Frame: frame, Bg: bg, Pic: pic, Label: label,
+                PaintedFill: "232C3D", PaintedBorder: "232C3D"})
         }
         bottom := 92 + this.Rows * this.CellH
         this.Status := g.AddText("x22 y" bottom " w" (this.Width - 44) " h22 c96B9FF +0x80", "")
@@ -718,10 +721,24 @@ class LauncherPanel {
             if index > count
                 continue
             colors := this.TileColors(index)
+            if tile.PaintedFill = colors.Fill && tile.PaintedBorder = colors.Border
+                continue
+            this.ApplyTileColors(tile, colors)
+        }
+    }
+
+    ApplyTileColors(tile, colors) {
+        ; 只刷新发生变化的卡片；相同颜色不重复设置，不重新加载图标。
+        if tile.PaintedBorder != colors.Border {
             tile.Frame.Opt("Background" colors.Border)
+            tile.PaintedBorder := colors.Border
+            tile.Frame.Redraw()
+        }
+        if tile.PaintedFill != colors.Fill {
             for ctrl in [tile.Bg, tile.Pic, tile.Label]
                 ctrl.Opt("Background" colors.Fill)
-            for ctrl in [tile.Frame, tile.Bg, tile.Pic, tile.Label]
+            tile.PaintedFill := colors.Fill
+            for ctrl in [tile.Bg, tile.Pic, tile.Label]
                 ctrl.Redraw()
         }
     }

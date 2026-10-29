@@ -21,6 +21,14 @@ class HoverTestPanel extends CoreTestPanel {
     }
 }
 
+class PaintAuditPanel extends HoverTestPanel {
+    PaintedCards := []
+    ApplyTileColors(tile, colors) {
+        this.PaintedCards.Push(tile.Frame.Hwnd)
+        super.ApplyTileColors(tile, colors)
+    }
+}
+
 Check(condition, message) {
     if !condition
         throw Error("FAIL: " message)
@@ -86,13 +94,34 @@ RunCoreTests() {
         Check(!hover.Visible && !hover.TooltipVisible && hover.HoverIndex = 0, "隐藏面板清除全部悬停反馈")
         hover.Cleanup()
 
-        paged := HoverTestPanel(configPath)
+        paged := PaintAuditPanel(configPath)
+        icon := LoadPicture(A_AhkPath, "Icon1 w32 h32", &iconType)
+        Check(icon && iconType = 1, "重绘检查使用真实软件图标")
         Loop 40
-            paged.Items.Push({Name: "软件" A_Index, Path: "", WorkDir: "", Category: "全部", Icon: 0})
+            paged.Items.Push({Name: "软件" A_Index, Path: "", WorkDir: "", Category: "全部", Icon: icon})
         paged.Groups := Map("全部", paged.Items)
         paged.Categories := ["全部"]
         paged.BuildGui()
         paged.Visible := true
+        Check((WinGetExStyle(paged.Window) & 0x02000000) &&
+            (WinGetStyle(paged.Tiles[1].Bg) & 0x04000000), "启用双缓冲及图标区域裁剪")
+        untouchedImage := SendMessage(0x0173, 1, 0, paged.Tiles[4].Pic)
+        paged.PaintedCards := []
+        paged.HandlePointer(10, 10, paged.Window.Hwnd, paged.Tiles[2].Bg.Hwnd)
+        Check(paged.PaintedCards.Length = 2, "切换悬停只更新前后两个卡片，不重绘整页")
+        paged.PaintedCards := []
+        paged.PaintTiles()
+        paged.HandlePointer(11, 10, paged.Window.Hwnd, paged.Tiles[2].Label.Hwnd)
+        Check(paged.PaintedCards.Length = 0, "相同高亮及同一卡片内移动不重复重绘")
+        paged.PaintedCards := []
+        Loop 20 {
+            slot := Mod(A_Index, 2) ? 3 : 2
+            paged.HandlePointer(20 + A_Index, 10, paged.Window.Hwnd, paged.Tiles[slot].Bg.Hwnd)
+        }
+        Check(paged.PaintedCards.Length = 40 &&
+            untouchedImage = SendMessage(0x0173, 1, 0, paged.Tiles[4].Pic),
+            "连续跨卡片移动仍只更新目标卡片，其他图标保持不变")
+        paged.Selected := 1
         paged.Move(paged.PageSize)
         paged.HandlePointer(30, 30, paged.Window.Hwnd, paged.Tiles[2].Bg.Hwnd)
         Check(paged.Selected = 20 && paged.HoverIndex = 20, "翻页后按当前页映射悬停软件")
@@ -101,6 +130,7 @@ RunCoreTests() {
         Check(paged.Selected = 40 && paged.HoverIndex = 0, "末页空白格不能悬停选择或启动")
         paged.Hide(false)
         paged.Cleanup()
+        DllCall("DestroyIcon", "ptr", icon)
 
         editor := LauncherSettings(app)
         Check(editor.Controls["ShowAll"].Type = "CheckBox" && editor.OrderList.GetCount() > 0, "真实设置控件及事件绑定可创建（未显示）")

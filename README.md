@@ -10,9 +10,9 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `AltQLauncher-1.0.1-Setup-x64.exe` | Windows 10/11 64 位安装版，无需另装 AutoHotkey |
-| `AltQLauncher-1.0.1-Portable-x64.zip` | 便携版，完整解压后双击 `AltQLauncher.exe` |
-| `AltQLauncher-1.0.1-Source.zip` | 源码和 GitHub 工程 |
+| `AltQLauncher-1.0.2-Setup-x64.exe` | Windows 10/11 64 位安装版，无需另装 AutoHotkey |
+| `AltQLauncher-1.0.2-Portable-x64.zip` | 便携版，完整解压后双击 `AltQLauncher.exe` |
+| `AltQLauncher-1.0.2-Source.zip` | 源码和 GitHub 工程 |
 | `SHA256SUMS.txt` | 文件校验值 |
 
 安装版默认只安装到当前用户的 `%LOCALAPPDATA%\Programs\AltQLauncher`，不要求管理员权限。安装时可选桌面快捷方式；完成后可运行程序并打开设置。也可从开始菜单找到主程序、设置和卸载入口。
