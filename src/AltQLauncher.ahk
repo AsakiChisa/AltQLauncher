@@ -3,7 +3,7 @@
 #Warn All, StdOut
 ;@Ahk2Exe-SetName AltQLauncher
 ;@Ahk2Exe-SetDescription AltQLauncher 应用启动器
-;@Ahk2Exe-SetVersion 1.0.2
+;@Ahk2Exe-SetVersion 1.0.3
 ;@Ahk2Exe-SetOrigFilename AltQLauncher.exe
 ;@Ahk2Exe-SetCopyright Copyright (c) 2026 AltQLauncher contributors
 
@@ -56,7 +56,7 @@ RunLauncherApp() {
         }
     }
     if HasLauncherArgument("--version") {
-        FileAppend("AltQLauncher 1.0.2`n", "*", "UTF-8")
+        FileAppend("AltQLauncher 1.0.3`n", "*", "UTF-8")
         ExitApp(0)
     }
     directory := LauncherDataDirectory(dataOverride)
@@ -73,7 +73,7 @@ RunLauncherApp() {
         settings.Document()
         settings.Destroy()
         Launcher.Cleanup()
-        FileAppend("PASS: AltQLauncher 1.0.2 config/ui preflight`n", "*", "UTF-8")
+        FileAppend("PASS: AltQLauncher 1.0.3 config/ui preflight`n", "*", "UTF-8")
         ExitApp(0)
     }
     InstallKeybdHook()
@@ -446,8 +446,7 @@ class LauncherPanel {
         this.CellH := 102
         this.Width := 40 + this.Columns * this.CellW
         this.Height := 174 + this.Rows * this.CellH
-        ; WS_EX_COMPOSITED：把重叠子控件在缓冲区绘制完成后一起显示。
-        g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x02000000", "AltQLauncher")
+        g := Gui("+AlwaysOnTop -Caption +ToolWindow", "AltQLauncher")
         this.Window := g
         g.BackColor := "171D2B"
         g.MarginX := 0
@@ -466,16 +465,20 @@ class LauncherPanel {
             slot := A_Index
             x := 20 + Mod(slot - 1, this.Columns) * this.CellW
             y := 86 + Floor((slot - 1) / this.Columns) * this.CellH
-            ; WS_CLIPSIBLINGS：边框和底色不能擦到位于上方的图标、文字区域。
-            frame := g.AddText("x" x " y" y " w108 h94 Background232C3D +0x100 +0x04000000", "")
-            bg := g.AddText("x" (x + 2) " y" (y + 2) " w104 h90 Background232C3D +0x100 +0x04000000", "")
+            ; 四条窄边框不与图标重叠；悬停只改边框，避免重绘图标区域。
+            frame := g.AddText("x" x " y" y " w108 h2 Background232C3D +0x100", "")
+            bottomFrame := g.AddText("x" x " y" (y + 92) " w108 h2 Background232C3D +0x100", "")
+            leftFrame := g.AddText("x" x " y" (y + 2) " w2 h90 Background232C3D +0x100", "")
+            rightFrame := g.AddText("x" (x + 106) " y" (y + 2) " w2 h90 Background232C3D +0x100", "")
+            frames := [frame, bottomFrame, leftFrame, rightFrame]
+            bg := g.AddText("x" (x + 2) " y" (y + 2) " w104 h90 Background232C3D +0x100", "")
             pic := g.AddPicture("x" (x + 38) " y" (y + 10) " w32 h32 Background232C3D", "")
             label := g.AddText("x" (x + 4) " y" (y + 50) " w100 h40 Center +0x100 +0x80 Background232C3D", "")
-            for ctrl in [frame, bg, pic, label] {
+            for ctrl in [frame, bottomFrame, leftFrame, rightFrame, bg, pic, label] {
                 ctrl.OnEvent("Click", ObjBindMethod(this, "ClickTile", slot))
                 this.TileByHwnd[ctrl.Hwnd] := slot
             }
-            this.Tiles.Push({Frame: frame, Bg: bg, Pic: pic, Label: label,
+            this.Tiles.Push({Frame: frame, Frames: frames, Bg: bg, Pic: pic, Label: label,
                 PaintedFill: "232C3D", PaintedBorder: "232C3D"})
         }
         bottom := 92 + this.Rows * this.CellH
@@ -690,7 +693,8 @@ class LauncherPanel {
         for slot, tile in this.Tiles {
             index := page * this.PageSize + slot
             exists := index <= count
-            tile.Frame.Visible := exists
+            for border in tile.Frames
+                border.Visible := exists
             tile.Bg.Visible := exists
             tile.Pic.Visible := exists && items[index].Icon != 0
             tile.Label.Visible := exists
@@ -707,9 +711,9 @@ class LauncherPanel {
 
     TileColors(index) {
         if index = this.HoverIndex
-            return {Fill: "48658F", Border: "A4C8FF"}
+            return {Fill: "232C3D", Border: "A4C8FF"}
         if index = this.Selected
-            return {Fill: "3B5279", Border: "638FCF"}
+            return {Fill: "232C3D", Border: "638FCF"}
         return {Fill: "232C3D", Border: "232C3D"}
     }
 
@@ -728,18 +732,13 @@ class LauncherPanel {
     }
 
     ApplyTileColors(tile, colors) {
-        ; 只刷新发生变化的卡片；相同颜色不重复设置，不重新加载图标。
+        ; 只刷新卡片四周的窄边框，图标和文字控件完全不参与悬停重绘。
         if tile.PaintedBorder != colors.Border {
-            tile.Frame.Opt("Background" colors.Border)
+            for border in tile.Frames {
+                border.Opt("Background" colors.Border)
+                border.Redraw()
+            }
             tile.PaintedBorder := colors.Border
-            tile.Frame.Redraw()
-        }
-        if tile.PaintedFill != colors.Fill {
-            for ctrl in [tile.Bg, tile.Pic, tile.Label]
-                ctrl.Opt("Background" colors.Fill)
-            tile.PaintedFill := colors.Fill
-            for ctrl in [tile.Bg, tile.Pic, tile.Label]
-                ctrl.Redraw()
         }
     }
 

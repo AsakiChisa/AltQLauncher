@@ -29,6 +29,15 @@ class PaintAuditPanel extends HoverTestPanel {
     }
 }
 
+class NoHoverRepaint {
+    Opt(*) {
+        throw Error("悬停不应修改图标、文字或底色控件")
+    }
+    Redraw(*) {
+        throw Error("悬停不应重画图标、文字或底色控件")
+    }
+}
+
 Check(condition, message) {
     if !condition
         throw Error("FAIL: " message)
@@ -103,8 +112,23 @@ RunCoreTests() {
         paged.Categories := ["全部"]
         paged.BuildGui()
         paged.Visible := true
-        Check((WinGetExStyle(paged.Window) & 0x02000000) &&
-            (WinGetStyle(paged.Tiles[1].Bg) & 0x04000000), "启用双缓冲及图标区域裁剪")
+        Check(!(WinGetExStyle(paged.Window) & 0x02000000) &&
+            !(WinGetStyle(paged.Tiles[1].Bg) & 0x04000000), "使用经实际确认的普通窗口绘制方式")
+        safeBorders := true
+        for tile in paged.Tiles {
+            tile.Pic.GetPos(&ix, &iy, &iw, &ih)
+            for border in tile.Frames {
+                border.GetPos(&bx, &by, &bw, &bh)
+                if !(bx + bw <= ix || bx >= ix + iw || by + bh <= iy || by >= iy + ih)
+                    safeBorders := false
+            }
+        }
+        Check(safeBorders, "所有卡片的四条边框均不覆盖图标区域")
+        guard := NoHoverRepaint()
+        probe := {Frame: paged.Tiles[2].Frame, Frames: paged.Tiles[2].Frames,
+            PaintedBorder: "232C3D", Bg: guard, Pic: guard, Label: guard}
+        LauncherPanel.Prototype.ApplyTileColors.Call(paged, probe, {Fill: "232C3D", Border: "A4C8FF"})
+        Check(probe.PaintedBorder = "A4C8FF", "悬停仅更新边框，完全不调用图标或文字重绘")
         untouchedImage := SendMessage(0x0173, 1, 0, paged.Tiles[4].Pic)
         paged.PaintedCards := []
         paged.HandlePointer(10, 10, paged.Window.Hwnd, paged.Tiles[2].Bg.Hwnd)
